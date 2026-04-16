@@ -7,8 +7,10 @@
  ============================================================================
  */
 
+#include <stddef.h>
 #include <string.h>
 #include <unistd.h>
+#include <sys/un.h>
 
 #include <hev-task.h>
 #include <hev-task-io.h>
@@ -311,6 +313,72 @@ hev_socks5_client_connect (HevSocks5Client *self, const char *addr, int port)
     HEV_SOCKS5 (self)->fd = fd;
     hev_socks5_set_addr_family (HEV_SOCKS5 (self), addr_family);
     LOG_D ("%p socks5 client connect server fd %d", self, fd);
+
+    return 0;
+}
+
+int
+hev_socks5_client_connect_unix (HevSocks5Client *self, const char *path)
+{
+    HevSocks5Class *klass;
+    struct sockaddr_un saddr;
+    struct sockaddr *sap;
+    socklen_t addr_len;
+    int timeout;
+    int fd, res;
+
+    timeout = hev_socks5_get_connect_timeout ();
+    hev_socks5_set_timeout (HEV_SOCKS5 (self), timeout);
+
+    if (!path || !path[0]) {
+        LOG_I ("%p socks5 client unix socket path", self);
+        return -1;
+    }
+
+    LOG_D ("%p socks5 client connect unix [%s]", self, path);
+
+    if (strlen (path) >= sizeof (saddr.sun_path)) {
+        LOG_I ("%p socks5 client unix socket path too long", self);
+        return -1;
+    }
+
+    fd = hev_task_io_socket_socket (AF_UNIX, SOCK_STREAM, 0);
+    if (fd < 0) {
+        LOG_E ("%p socks5 client socket", self);
+        return -1;
+    }
+
+    res = hev_task_add_fd (hev_task_self (), fd, POLLIN | POLLOUT);
+    if (res < 0)
+        hev_task_mod_fd (hev_task_self (), fd, POLLIN | POLLOUT);
+
+    memset (&saddr, 0, sizeof (saddr));
+    saddr.sun_family = AF_UNIX;
+    strncpy (saddr.sun_path, path, sizeof (saddr.sun_path) - 1);
+    addr_len = (socklen_t)(offsetof (struct sockaddr_un, sun_path) +
+                           strlen (saddr.sun_path) + 1);
+
+    sap = (struct sockaddr *)&saddr;
+    klass = HEV_OBJECT_GET_CLASS (self);
+    res = klass->binder (HEV_SOCKS5 (self), fd, sap);
+    if (res < 0) {
+        LOG_W ("%p socks5 client bind", self);
+        hev_task_del_fd (hev_task_self (), fd);
+        close (fd);
+        return -1;
+    }
+
+    res = hev_task_io_socket_connect (fd, sap, addr_len, task_io_yielder,
+                                      self);
+    if (res < 0) {
+        LOG_I ("%p socks5 client connect unix", self);
+        hev_task_del_fd (hev_task_self (), fd);
+        close (fd);
+        return -1;
+    }
+
+    HEV_SOCKS5 (self)->fd = fd;
+    LOG_D ("%p socks5 client connect unix fd %d", self, fd);
 
     return 0;
 }
