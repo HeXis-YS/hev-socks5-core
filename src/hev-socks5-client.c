@@ -326,6 +326,8 @@ hev_socks5_client_connect_unix (HevSocks5Client *self, const char *path)
     socklen_t addr_len;
     int timeout;
     int fd, res;
+    const char *name = path;
+    int abstract = 0;
 
     timeout = hev_socks5_get_connect_timeout ();
     hev_socks5_set_timeout (HEV_SOCKS5 (self), timeout);
@@ -335,9 +337,20 @@ hev_socks5_client_connect_unix (HevSocks5Client *self, const char *path)
         return -1;
     }
 
-    LOG_D ("%p socks5 client connect unix [%s]", self, path);
+    if (path[0] == '@') {
+        abstract = 1;
+        name = path + 1;
+    }
 
-    if (strlen (path) >= sizeof (saddr.sun_path)) {
+    if (!name[0]) {
+        LOG_I ("%p socks5 client unix socket name empty", self);
+        return -1;
+    }
+
+    LOG_D ("%p socks5 client connect unix %s[%s]", self,
+           abstract ? "abstract " : "", name);
+
+    if (strlen (name) >= sizeof (saddr.sun_path)) {
         LOG_I ("%p socks5 client unix socket path too long", self);
         return -1;
     }
@@ -354,9 +367,16 @@ hev_socks5_client_connect_unix (HevSocks5Client *self, const char *path)
 
     memset (&saddr, 0, sizeof (saddr));
     saddr.sun_family = AF_UNIX;
-    strncpy (saddr.sun_path, path, sizeof (saddr.sun_path) - 1);
-    addr_len = (socklen_t)(offsetof (struct sockaddr_un, sun_path) +
-                           strlen (saddr.sun_path) + 1);
+    if (abstract) {
+        saddr.sun_path[0] = '\0';
+        memcpy (&saddr.sun_path[1], name, strlen (name));
+        addr_len = (socklen_t)(offsetof (struct sockaddr_un, sun_path) + 1 +
+                               strlen (name));
+    } else {
+        strncpy (saddr.sun_path, name, sizeof (saddr.sun_path) - 1);
+        addr_len = (socklen_t)(offsetof (struct sockaddr_un, sun_path) +
+                               strlen (saddr.sun_path) + 1);
+    }
 
     sap = (struct sockaddr *)&saddr;
     klass = HEV_OBJECT_GET_CLASS (self);
