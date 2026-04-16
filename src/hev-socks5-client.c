@@ -409,6 +409,8 @@ hev_socks5_client_connect_unix (HevSocks5Client *self, const char *path)
     }
 
     HEV_SOCKS5 (self)->fd = fd;
+    hev_socks5_set_addr_family (HEV_SOCKS5 (self),
+                                HEV_SOCKS5_ADDR_FAMILY_IPV4);
     LOG_D ("%p socks5 client connect unix fd %d", self, fd);
 
     return 0;
