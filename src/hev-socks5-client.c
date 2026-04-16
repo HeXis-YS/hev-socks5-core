@@ -8,9 +8,14 @@
  */
 
 #include <stddef.h>
+#include <errno.h>
 #include <string.h>
 #include <unistd.h>
 #include <sys/un.h>
+
+#ifndef errno
+extern int errno;
+#endif
 
 #include <hev-task.h>
 #include <hev-task-io.h>
@@ -382,7 +387,10 @@ hev_socks5_client_connect_unix (HevSocks5Client *self, const char *path)
     klass = HEV_OBJECT_GET_CLASS (self);
     res = klass->binder (HEV_SOCKS5 (self), fd, sap);
     if (res < 0) {
-        LOG_W ("%p socks5 client bind", self);
+        int err = errno;
+
+        LOG_W ("%p socks5 client bind errno %d (%s)", self, err,
+               strerror (err));
         hev_task_del_fd (hev_task_self (), fd);
         close (fd);
         return -1;
@@ -391,7 +399,10 @@ hev_socks5_client_connect_unix (HevSocks5Client *self, const char *path)
     res = hev_task_io_socket_connect (fd, sap, addr_len, task_io_yielder,
                                       self);
     if (res < 0) {
-        LOG_I ("%p socks5 client connect unix", self);
+        int err = errno;
+
+        LOG_I ("%p socks5 client connect unix errno %d (%s)", self, err,
+               strerror (err));
         hev_task_del_fd (hev_task_self (), fd);
         close (fd);
         return -1;
